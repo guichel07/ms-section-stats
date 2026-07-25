@@ -4,7 +4,6 @@
     "module": "esnext",
     "lib": ["ES2023", "DOM"],
     "types": ["vite/client"],
-    "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
     /* Bundler mode */
@@ -12,13 +11,19 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
-    "noEmit": true,
+
+    /* ─── AJUSTEMENT POUR LES TYPES ─── */
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "./dist",
+    "rootDir": "./src", // <-- AJOUTE CETTE LIGNE ICI
 
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
   },
-  "include": ["src"]
+  "include": ["src"],
 }

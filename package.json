@@ -1,15 +1,38 @@
 {
   "name": "ms-section-stats",
-  "private": true,
+  "private": false,
   "version": "0.0.0",
   "type": "module",
+  "main": "./dist/section-stats.js",
+  "module": "./dist/section-stats.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/"
+  ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
+    "build": "vite build && tsc -p tsconfig.json",
+    "test": "npx vitest run",
+    "test -- --coverage": "npx vitest run --coverage",
+    "preview": "vite preview",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/mocha": "^10.0.10",
+    "@typescript-eslint/eslint-plugin": "^8.61.1",
+    "@typescript-eslint/parser": "^8.61.1",
+    "@vitest/coverage-v8": "^4.1.9",
+    "eslint": "^10.5.0",
+    "eslint-config-prettier": "^10.1.8",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.8.4",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1"
+    "vite": "^8.1.1",
+    "vitest": "^4.1.9"
+  },
+  "dependencies": {
+    "tek-ms-ds": "^1.0.18"
   }
 }
