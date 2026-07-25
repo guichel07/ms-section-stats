@@ -1,7 +1,7 @@
 {
   "name": "ms-section-stats",
   "private": false,
-  "version": "0.0.0",
+  "version": "v1.0.0",
   "type": "module",
   "main": "./dist/section-stats.js",
   "module": "./dist/section-stats.js",
