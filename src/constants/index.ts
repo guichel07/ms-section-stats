@@ -11,6 +11,13 @@ export const DEFAULT_STATS_PERIODS: StatsPeriod[] = [
   { key: 'year', label: 'Année' },
 ];
 
-export const SELLER_COLORS = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2'];
+export const SELLER_COLORS = [
+  '#2563eb',
+  '#16a34a',
+  '#d97706',
+  '#dc2626',
+  '#7c3aed',
+  '#0891b2',
+];
 
 export const RANK_TIERS = ['gold', 'silver', 'bronze'];

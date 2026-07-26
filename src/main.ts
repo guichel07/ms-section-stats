@@ -3,7 +3,9 @@ import { Stats } from './stats';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
-const stats = new Stats(app, {
+const stats = new Stats(app);
+
+stats.render({
   sellers: [
     {
       name: 'Awa Diop',
@@ -25,5 +27,3 @@ const stats = new Stats(app, {
     },
   ],
 });
-
-stats.render();

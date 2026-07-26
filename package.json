@@ -1,7 +1,7 @@
 {
   "name": "ms-section-stats",
   "private": false,
-  "version": "v1.0.2",
+  "version": "v1.0.4",
   "type": "module",
   "main": "./dist/section-stats.js",
   "module": "./dist/section-stats.js",
@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "vite build && tsc -p tsconfig.json",
+    "build": "vite build && tsc -p tsconfig.build.json",
     "test": "npx vitest run",
     "test -- --coverage": "npx vitest run --coverage",
     "preview": "vite preview",

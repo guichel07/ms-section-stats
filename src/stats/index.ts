@@ -1,4 +1,9 @@
-import { fmt, DEFAULT_STATS_PERIODS, SELLER_COLORS, RANK_TIERS } from '../constants';
+import {
+  fmt,
+  DEFAULT_STATS_PERIODS,
+  SELLER_COLORS,
+  RANK_TIERS,
+} from '../constants';
 
 export interface StatsPeriod {
   key: string;
@@ -19,20 +24,21 @@ export interface StatsOptions {
 }
 
 export class Stats {
-  private el: HTMLElement;
-  private sellers: Seller[];
-  private periods: StatsPeriod[];
-  private currentPeriod: string;
+  private readonly el: HTMLElement;
+  private sellers: Seller[] = [];
+  private periods: StatsPeriod[] = DEFAULT_STATS_PERIODS;
+  private currentPeriod = '';
   private eventsBound = false;
 
-  constructor(mountPoint: HTMLElement, options: StatsOptions) {
-    this.el = mountPoint;
-    this.sellers = options.sellers;
-    this.periods = options.periods ?? DEFAULT_STATS_PERIODS;
-    this.currentPeriod = options.defaultPeriod ?? (this.periods[0]?.key ?? '');
+  constructor(el: HTMLElement) {
+    this.el = el;
   }
 
-  render(): void {
+  render(options: StatsOptions): void {
+    this.sellers = options.sellers;
+    this.periods = options.periods ?? DEFAULT_STATS_PERIODS;
+    this.currentPeriod = options.defaultPeriod ?? this.periods[0]?.key ?? '';
+
     this.el.innerHTML = `
       <div class="section-view" id="section-stats">
         <div class="catalog-head">
@@ -59,7 +65,8 @@ export class Stats {
 
   private getRanked(): Seller[] {
     return [...this.sellers].sort(
-      (a, b) => (b.sales[this.currentPeriod] ?? 0) - (a.sales[this.currentPeriod] ?? 0)
+      (a, b) =>
+        (b.sales[this.currentPeriod] ?? 0) - (a.sales[this.currentPeriod] ?? 0)
     );
   }
 
@@ -110,7 +117,10 @@ export class Stats {
 
   private renderSummary(): void {
     const ranked = this.getRanked();
-    const total = ranked.reduce((sum, s) => sum + (s.sales[this.currentPeriod] ?? 0), 0);
+    const total = ranked.reduce(
+      (sum, s) => sum + (s.sales[this.currentPeriod] ?? 0),
+      0
+    );
 
     const totalEl = this.el.querySelector<HTMLElement>('#stat-total');
     const countEl = this.el.querySelector<HTMLElement>('#stat-count');
@@ -126,7 +136,10 @@ export class Stats {
     if (!chart) return;
 
     const ranked = this.getRanked();
-    const max = Math.max(1, ...ranked.map((s) => s.sales[this.currentPeriod] ?? 0));
+    const max = Math.max(
+      1,
+      ...ranked.map((s) => s.sales[this.currentPeriod] ?? 0)
+    );
 
     chart.innerHTML = ranked
       .map((s, idx) => {

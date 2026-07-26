@@ -2,8 +2,18 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { Stats } from './index';
 
 const sellers = [
-  { name: 'Awa Diop', zone: 'Dakar', phone: '77 000 00 00', sales: { day: 100, month: 1000 } },
-  { name: 'Moussa Ba', zone: 'Thiès', phone: '76 111 11 11', sales: { day: 300, month: 500 } },
+  {
+    name: 'Awa Diop',
+    zone: 'Dakar',
+    phone: '77 000 00 00',
+    sales: { day: 100, month: 1000 },
+  },
+  {
+    name: 'Moussa Ba',
+    zone: 'Thiès',
+    phone: '76 111 11 11',
+    sales: { day: 300, month: 500 },
+  },
 ];
 
 describe('Stats', () => {
@@ -14,8 +24,8 @@ describe('Stats', () => {
   });
 
   it('renders the summary and ranks sellers by the default period', () => {
-    const stats = new Stats(root, { sellers });
-    stats.render();
+    const stats = new Stats(root);
+    stats.render({ sellers });
 
     const cards = root.querySelectorAll('.client-card .cname');
     expect(cards[0].textContent).toBe('Moussa Ba');
@@ -27,8 +37,15 @@ describe('Stats', () => {
   });
 
   it('switches period and re-renders when a chip is clicked', () => {
-    const stats = new Stats(root, { periods: [{ key: 'day', label: 'Jour' }, { key: 'month', label: 'Mois' }], sellers, defaultPeriod: 'day' });
-    stats.render();
+    const stats = new Stats(root);
+    stats.render({
+      periods: [
+        { key: 'day', label: 'Jour' },
+        { key: 'month', label: 'Mois' },
+      ],
+      sellers,
+      defaultPeriod: 'day',
+    });
 
     const monthChip = root.querySelector<HTMLElement>('[data-period="month"]')!;
     monthChip.click();
@@ -40,8 +57,8 @@ describe('Stats', () => {
   });
 
   it('falls back to "—" when there are no sellers', () => {
-    const stats = new Stats(root, { sellers: [] });
-    stats.render();
+    const stats = new Stats(root);
+    stats.render({ sellers: [] });
 
     expect(root.querySelector('#stat-top')?.textContent).toBe('—');
     expect(root.querySelector('#stat-count')?.textContent).toBe('0');
