@@ -1,7 +1,7 @@
 {
   "name": "ms-section-stats",
   "private": false,
-  "version": "v1.0.4",
+  "version": "v1.0.5",
   "type": "module",
   "main": "./dist/section-stats.js",
   "module": "./dist/section-stats.js",
@@ -33,6 +33,6 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
-    "tek-ms-ds": "^1.0.18"
+    "tek-ms-ds": "^1.0.19"
   }
 }
