@@ -1,6 +1,27 @@
 import 'tek-ms-ds/dist/style.css';
 import { Stats } from './stats';
-import type { SellerDetail, StatsPeriod, TrendBucket } from './stats';
+import type { SellerActivityPoint, SellerDetail, StatsPeriod, TrendBucket } from './stats';
+
+/** Fabrique un point d'activité de démo — approxime un pic horaire unique par jour. */
+function activityPoint(
+  label: string,
+  ca: number,
+  benefice: number,
+  salesCount: number,
+  peakHour?: number
+): SellerActivityPoint {
+  const active = salesCount > 0;
+  return {
+    label,
+    ca,
+    benefice,
+    salesCount,
+    active,
+    firstSaleTime: active && peakHour !== undefined ? `${String(peakHour).padStart(2, '0')}:00` : null,
+    lastSaleTime: active && peakHour !== undefined ? `${String(peakHour + 1).padStart(2, '0')}:00` : null,
+    hourlyPattern: active && peakHour !== undefined ? [{ hour: peakHour, salesCount, ca }] : [],
+  };
+}
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
@@ -33,6 +54,26 @@ const sellers = [
   { id: 'v3', name: 'Fatou Sarr', zone: 'Saint-Louis', phone: '78 222 22 22' },
 ];
 
+/** Ajoute un drill-down horaire de démo à un bucket — deux pics horaires plausibles. */
+function withHourly(bucket: TrendBucket, morningHour: number, afternoonHour: number): TrendBucket {
+  const morningCa = Math.round(bucket.ca * 0.55);
+  const afternoonCa = bucket.ca - morningCa;
+  return {
+    ...bucket,
+    firstSaleTime: `${String(morningHour).padStart(2, '0')}:00`,
+    lastSaleTime: `${String(afternoonHour).padStart(2, '0')}:30`,
+    hourlyPattern: [
+      { hour: morningHour, salesCount: 3, ca: morningCa },
+      { hour: afternoonHour, salesCount: 2, ca: afternoonCa },
+    ],
+  };
+}
+
+const sevenJoursTrend = buildTrend(
+  ['J1', 'J2', 'J3', 'J4', 'J5', 'J6', 'J7'],
+  [14000, 17000, 15500, 19000, 21500, 23500, 26500]
+).map((bucket, i) => withHourly(bucket, 9 + (i % 3), 15 + (i % 4)));
+
 const periods: StatsPeriod[] = [
   {
     key: '7j',
@@ -43,10 +84,14 @@ const periods: StatsPeriod[] = [
       v2: { ca: 62000, benefice: 18600 },
       v3: { ca: 30000, benefice: 9000 },
     },
-    trend: buildTrend(
-      ['J1', 'J2', 'J3', 'J4', 'J5', 'J6', 'J7'],
-      [14000, 17000, 15500, 19000, 21500, 23500, 26500]
-    ),
+    trend: sevenJoursTrend,
+    firstSaleTime: '08:30',
+    lastSaleTime: '19:15',
+    hourlyPattern: [
+      { hour: 9, salesCount: 12, ca: 42000 },
+      { hour: 13, salesCount: 18, ca: 63000 },
+      { hour: 19, salesCount: 9, ca: 31500 },
+    ],
   },
   {
     key: '4sem',
@@ -112,13 +157,13 @@ const sellerDetails: Record<string, SellerDetail> = {
         activeBucketsCount: 3,
         totalBucketsCount: 7,
         activity: [
-          { label: 'Lun', ca: 12000, benefice: 3600, salesCount: 3, active: true },
-          { label: 'Mar', ca: 18000, benefice: 5400, salesCount: 4, active: true },
-          { label: 'Mer', ca: 15000, benefice: 4500, salesCount: 3, active: true },
-          { label: 'Jeu', ca: 0, benefice: 0, salesCount: 0, active: false },
-          { label: 'Ven', ca: 0, benefice: 0, salesCount: 0, active: false },
-          { label: 'Sam', ca: 0, benefice: 0, salesCount: 0, active: false },
-          { label: 'Dim', ca: 0, benefice: 0, salesCount: 0, active: false },
+          activityPoint('Lun', 12000, 3600, 3, 9),
+          activityPoint('Mar', 18000, 5400, 4, 12),
+          activityPoint('Mer', 15000, 4500, 3, 17),
+          activityPoint('Jeu', 0, 0, 0),
+          activityPoint('Ven', 0, 0, 0),
+          activityPoint('Sam', 0, 0, 0),
+          activityPoint('Dim', 0, 0, 0),
         ],
         hourlyPattern: [
           { hour: 9, salesCount: 2, ca: 9000 },
@@ -151,13 +196,13 @@ const sellerDetails: Record<string, SellerDetail> = {
         activeBucketsCount: 6,
         totalBucketsCount: 7,
         activity: [
-          { label: 'Lun', ca: 8000, benefice: 2400, salesCount: 2, active: true },
-          { label: 'Mar', ca: 9500, benefice: 2850, salesCount: 2, active: true },
-          { label: 'Mer', ca: 11000, benefice: 3300, salesCount: 2, active: true },
-          { label: 'Jeu', ca: 10500, benefice: 3150, salesCount: 2, active: true },
-          { label: 'Ven', ca: 0, benefice: 0, salesCount: 0, active: false },
-          { label: 'Sam', ca: 12000, benefice: 3600, salesCount: 2, active: true },
-          { label: 'Dim', ca: 11000, benefice: 3300, salesCount: 2, active: true },
+          activityPoint('Lun', 8000, 2400, 2, 8),
+          activityPoint('Mar', 9500, 2850, 2, 13),
+          activityPoint('Mer', 11000, 3300, 2, 13),
+          activityPoint('Jeu', 10500, 3150, 2, 19),
+          activityPoint('Ven', 0, 0, 0),
+          activityPoint('Sam', 12000, 3600, 2, 8),
+          activityPoint('Dim', 11000, 3300, 2, 13),
         ],
         hourlyPattern: [
           { hour: 8, salesCount: 2, ca: 10300 },
@@ -190,13 +235,13 @@ const sellerDetails: Record<string, SellerDetail> = {
         activeBucketsCount: 4,
         totalBucketsCount: 7,
         activity: [
-          { label: 'Lun', ca: 7500, benefice: 2250, salesCount: 2, active: true },
-          { label: 'Mar', ca: 0, benefice: 0, salesCount: 0, active: false },
-          { label: 'Mer', ca: 6000, benefice: 1800, salesCount: 1, active: true },
-          { label: 'Jeu', ca: 0, benefice: 0, salesCount: 0, active: false },
-          { label: 'Ven', ca: 8500, benefice: 2550, salesCount: 2, active: true },
-          { label: 'Sam', ca: 0, benefice: 0, salesCount: 0, active: false },
-          { label: 'Dim', ca: 8000, benefice: 2400, salesCount: 1, active: true },
+          activityPoint('Lun', 7500, 2250, 2, 10),
+          activityPoint('Mar', 0, 0, 0),
+          activityPoint('Mer', 6000, 1800, 1, 16),
+          activityPoint('Jeu', 0, 0, 0),
+          activityPoint('Ven', 8500, 2550, 2, 10),
+          activityPoint('Sam', 0, 0, 0),
+          activityPoint('Dim', 8000, 2400, 1, 16),
         ],
         hourlyPattern: [
           { hour: 10, salesCount: 3, ca: 15000 },

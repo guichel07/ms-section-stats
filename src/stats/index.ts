@@ -30,6 +30,11 @@ export interface TrendBucket {
    * pas une vraie donnée, tant que le back ne fournit pas le détail.
    */
   bySeller?: Record<string, Metrics>;
+  /** Heure de la première/dernière vente de ce bucket précis (drill-down), toute équipe confondue. */
+  firstSaleTime?: string | null;
+  lastSaleTime?: string | null;
+  /** Heures de ce bucket précis (drill-down) — absent/vide si le back ne le fournit pas encore. */
+  hourlyPattern?: SellerHourlyPoint[];
 }
 
 export interface PeriodDelta {
@@ -47,6 +52,11 @@ export interface StatsPeriod {
   delta?: PeriodDelta;
   /** Points de la courbe d'évolution (jour, semaine, mois...) pour cette période. */
   trend: TrendBucket[];
+  /** Heure de la première/dernière vente (toute équipe) du dernier jour actif de la période. */
+  firstSaleTime?: string | null;
+  lastSaleTime?: string | null;
+  /** Affluence heure par heure (toute équipe), agrégée sur toute la période — vue par défaut. */
+  hourlyPattern?: SellerHourlyPoint[];
 }
 
 export type StatsMetricKey = 'ca' | 'benefice';
@@ -58,19 +68,27 @@ export interface SellerAlert {
   message: string;
 }
 
-/** Un point par bucket de la période (jour/semaine/mois selon la clé) — sert à repérer les creux d'activité. */
+export interface SellerHourlyPoint {
+  hour: number;
+  salesCount: number;
+  ca: number;
+}
+
+/**
+ * Un point par bucket de la période (jour/semaine/mois selon la clé) — sert à repérer
+ * les creux d'activité. Porte aussi son propre drill-down horaire (firstSaleTime /
+ * lastSaleTime / hourlyPattern scopés à ce bucket précis, pas à toute la période) —
+ * même principe que ClientsOverview.selectDay dans ms-section-clients.
+ */
 export interface SellerActivityPoint {
   label: string;
   ca: number;
   benefice: number;
   salesCount: number;
   active: boolean;
-}
-
-export interface SellerHourlyPoint {
-  hour: number;
-  salesCount: number;
-  ca: number;
+  firstSaleTime: string | null;
+  lastSaleTime: string | null;
+  hourlyPattern: SellerHourlyPoint[];
 }
 
 export interface SellerTopItem {
@@ -137,6 +155,8 @@ export class Stats {
   private currentSellerDetail: SellerDetail | null = null;
   private currentSellerRank = 1;
   private currentSellerPeriodKey: string | null = null;
+  /** Index du bucket d'activité sélectionné (drill-down horaire) — null = vue agrégée sur toute la période. */
+  private focusedActivityIndex: number | null = null;
 
   constructor(el: HTMLElement) {
     this.el = el;
@@ -187,6 +207,15 @@ export class Stats {
           </div>
         </div>
 
+        <div class="cs-trend-card" id="global-shift-wrap" style="display:none;">
+          <div class="ss-shift-card" id="global-shift-card"></div>
+        </div>
+
+        <div class="cs-trend-card">
+          <div class="cs-trend-head"><span class="cs-trend-title" id="global-hourly-title">Affluence — heure par heure</span></div>
+          <div id="global-hourly-chart"></div>
+        </div>
+
         <div class="mss-trend-card">
           <div class="mss-trend-head">
             <span class="mss-trend-title" id="mss-trend-title"></span>
@@ -194,7 +223,7 @@ export class Stats {
           </div>
           <div class="mss-trend-grid" id="mss-trend-grid"></div>
           <div class="mss-trend-labels" id="mss-trend-labels"></div>
-          <div class="mss-trend-hint">Clique un point pour un focus sur cette période</div>
+          <div class="mss-trend-hint">Clique un point pour voir son détail heure par heure</div>
         </div>
 
         <div class="mss-chart-card">
@@ -287,9 +316,75 @@ export class Stats {
     this.renderPeriodChips();
     this.renderMetricSwitch();
     this.renderStatCards(period, ranked, focused, bucket);
+    this.renderGlobalHourly(period, bucket);
     this.renderTrend(period, focused);
     this.renderSellerChart(ranked, displayMetrics);
     this.renderSellersGrid(ranked, displayMetrics);
+  }
+
+  /**
+   * Affluence horaire toute équipe — l'agrégat de la période par défaut, ou le
+   * drill-down du bucket sélectionné (clic sur une barre de "Évolution") sinon.
+   * Même principe que le drill-down du side panel vendeur (voir renderSellerSidebar).
+   */
+  private renderGlobalHourly(period: StatsPeriod, focusedBucket: TrendBucket | undefined): void {
+    const title = this.el.querySelector<HTMLElement>('#global-hourly-title');
+    const chart = this.el.querySelector<HTMLElement>('#global-hourly-chart');
+    const shiftWrap = this.el.querySelector<HTMLElement>('#global-shift-wrap');
+    const shiftCard = this.el.querySelector<HTMLElement>('#global-shift-card');
+    if (!title || !chart || !shiftWrap || !shiftCard) return;
+
+    const points = focusedBucket ? (focusedBucket.hourlyPattern ?? []) : (period.hourlyPattern ?? []);
+    const firstSaleTime = focusedBucket ? focusedBucket.firstSaleTime : period.firstSaleTime;
+    const lastSaleTime = focusedBucket ? focusedBucket.lastSaleTime : period.lastSaleTime;
+
+    title.textContent = focusedBucket
+      ? `Affluence — heure par heure — ${focusedBucket.label}`
+      : 'Affluence — heure par heure';
+    chart.innerHTML = this.renderGlobalHourlyChart(points);
+
+    if (firstSaleTime && lastSaleTime) {
+      shiftWrap.style.display = '';
+      shiftCard.innerHTML = `
+        <span class="ss-shift-item">🕗 Première vente <b>${firstSaleTime}</b></span>
+        <span class="ss-shift-item">🕖 Dernière vente <b>${lastSaleTime}</b></span>
+      `;
+    } else {
+      shiftWrap.style.display = 'none';
+      shiftCard.innerHTML = '';
+    }
+  }
+
+  private globalHourlyHint(point: SellerHourlyPoint, isSelection: boolean): string {
+    const prefix = isSelection ? '' : 'Pic : ';
+    return `${prefix}${String(point.hour).padStart(2, '0')}h · ${point.salesCount} vente${point.salesCount === 1 ? '' : 's'} · ${fmt(point.ca)}`;
+  }
+
+  private renderGlobalHourlyChart(points: SellerHourlyPoint[]): string {
+    if (points.length === 0) {
+      return `<div class="no-results" style="padding:14px;"><span class="mark">Pas assez de données</span>sur cette période</div>`;
+    }
+
+    const max = Math.max(1, ...points.map((p) => p.salesCount));
+    const peak = points.reduce((a, b) => (b.salesCount > a.salesCount ? b : a));
+
+    return `
+      <div class="co-hint" id="global-hourly-hint">${this.globalHourlyHint(peak, false)}</div>
+      <div class="co-bar-grid co-bar-grid-hours" style="height:56px;">
+        ${points
+          .map(
+            (p) => `
+          <div class="co-bar-wrap" role="button" tabindex="0">
+            <div class="co-bar${p.hour === peak.hour ? ' co-bar-peak' : ''}" style="height:${Math.round((p.salesCount / max) * 100)}%;"></div>
+          </div>
+        `
+          )
+          .join('')}
+      </div>
+      <div class="co-bar-labels co-bar-labels-hours">
+        ${points.map((p) => `<span>${p.hour % 3 === 0 ? String(p.hour).padStart(2, '0') : ''}</span>`).join('')}
+      </div>
+    `;
   }
 
   private renderPeriodChips(): void {
@@ -559,8 +654,19 @@ export class Stats {
         const key = sellerPeriodChip.dataset.ssPeriod;
         if (key && key !== this.currentSellerPeriodKey) {
           this.currentSellerPeriodKey = key;
+          // Les buckets changent de sens d'une période à l'autre (jour -> semaine...) :
+          // un focus sur un bucket de l'ancienne période n'a plus de sens ici.
+          this.focusedActivityIndex = null;
           this.renderSellerSidebar();
         }
+        return;
+      }
+
+      const activityBar = target.closest<HTMLElement>('#ss-activity-chart [data-ss-activity-index]');
+      if (activityBar) {
+        const index = Number(activityBar.dataset.ssActivityIndex);
+        this.focusedActivityIndex = this.focusedActivityIndex === index ? null : index;
+        this.renderSellerSidebar();
       }
     });
   }
@@ -588,6 +694,7 @@ export class Stats {
     this.currentSellerRank = rank >= 0 ? rank + 1 : this.sellers.length;
     this.currentSellerPeriodKey =
       detail.defaultPeriodKey ?? detail.periods[0]?.key ?? null;
+    this.focusedActivityIndex = null;
     this.renderSellersGrid(ranked, displayMetrics);
     this.renderSellerSidebar();
   }
@@ -595,6 +702,7 @@ export class Stats {
   closeSellerDetail(): void {
     this.currentSellerDetail = null;
     this.currentSellerPeriodKey = null;
+    this.focusedActivityIndex = null;
     const sidebar = this.el.querySelector<HTMLElement>('#seller-sidebar');
     if (sidebar) sidebar.innerHTML = '';
 
@@ -620,6 +728,20 @@ export class Stats {
       .slice(0, 2)
       .toUpperCase();
     const alertLevel = detail.alert?.level ?? 'ok';
+
+    // Bucket sélectionné (drill-down) : ses propres heures/first-last sale, sinon
+    // repli sur l'agrégat de toute la période (ou de la fiche pour first/last sale).
+    const focusedBucket =
+      period && this.focusedActivityIndex !== null
+        ? period.activity[this.focusedActivityIndex]
+        : undefined;
+    const hourlyPoints = focusedBucket ? focusedBucket.hourlyPattern : (period?.hourlyPattern ?? []);
+    const shiftFirstSale = focusedBucket ? focusedBucket.firstSaleTime : detail.firstSaleTime;
+    const shiftLastSale = focusedBucket ? focusedBucket.lastSaleTime : detail.lastSaleTime;
+    const shiftDayLabel = focusedBucket ? focusedBucket.label : detail.lastActiveDayLabel;
+    const hourlyTitle = focusedBucket
+      ? `Affluence — heure par heure — ${focusedBucket.label}`
+      : 'Affluence — heure par heure';
 
     sidebar.innerHTML = `
       <div class="cs-head">
@@ -647,12 +769,12 @@ export class Stats {
       }
 
       ${
-        detail.firstSaleTime && detail.lastSaleTime
+        shiftFirstSale && shiftLastSale
           ? `
         <div class="ss-shift-card">
-          <span class="ss-shift-item">🕗 Première vente <b>${detail.firstSaleTime}</b></span>
-          <span class="ss-shift-item">🕖 Dernière vente <b>${detail.lastSaleTime}</b></span>
-          <span class="ss-shift-day">${detail.lastActiveDayLabel ?? ''}</span>
+          <span class="ss-shift-item">🕗 Première vente <b>${shiftFirstSale}</b></span>
+          <span class="ss-shift-item">🕖 Dernière vente <b>${shiftLastSale}</b></span>
+          <span class="ss-shift-day">${shiftDayLabel ?? ''}</span>
         </div>
       `
           : ''
@@ -662,8 +784,8 @@ export class Stats {
       <div class="cs-kpi-row-3" id="ss-kpi-row-3">${this.renderSellerKpiMinis(period)}</div>
 
       <div class="cs-trend-card">
-        <div class="cs-trend-head"><span class="cs-trend-title">Affluence — heure par heure</span></div>
-        <div id="ss-hourly-chart">${this.renderSellerHourly(period)}</div>
+        <div class="cs-trend-head"><span class="cs-trend-title" id="ss-hourly-title">${hourlyTitle}</span></div>
+        <div id="ss-hourly-chart">${this.renderSellerHourly(hourlyPoints)}</div>
       </div>
 
       <div class="cs-trend-card">
@@ -720,8 +842,7 @@ export class Stats {
     return `${prefix}${String(point.hour).padStart(2, '0')}h · ${point.salesCount} vente${point.salesCount === 1 ? '' : 's'} · ${fmt(point.ca)}`;
   }
 
-  private renderSellerHourly(period: SellerPeriodData | undefined): string {
-    const points = period?.hourlyPattern ?? [];
+  private renderSellerHourly(points: SellerHourlyPoint[]): string {
     if (points.length === 0) {
       return `<div class="no-results" style="padding:14px;"><span class="mark">Pas assez de données</span>sur cette période</div>`;
     }
@@ -748,7 +869,11 @@ export class Stats {
     `;
   }
 
-  /** Barres grisées pour les buckets sans vente — pour que le creux d'activité saute aux yeux. */
+  /**
+   * Barres grisées pour les buckets sans vente — pour que le creux d'activité saute aux
+   * yeux. Cliquer une barre fait un drill-down : le graphique d'affluence horaire (et le
+   * shift-card) au-dessus bascule sur les heures propres à ce bucket précis.
+   */
   private renderSellerActivity(period: SellerPeriodData | undefined): string {
     const points = period?.activity ?? [];
     if (points.length === 0) {
@@ -758,13 +883,13 @@ export class Stats {
     const max = Math.max(1, ...points.map((p) => p.ca));
 
     return `
-      <div class="co-hint">${period?.activeBucketsCount ?? 0} / ${period?.totalBucketsCount ?? 0} périodes actives</div>
+      <div class="co-hint">${period?.activeBucketsCount ?? 0} / ${period?.totalBucketsCount ?? 0} périodes actives — clique une barre pour voir ses heures</div>
       <div class="co-bar-grid">
         ${points
           .map(
-            (p) => `
-          <div class="co-bar-wrap" title="${p.label} : ${p.active ? fmt(p.ca) : 'aucune vente'}">
-            <div class="co-bar ${p.active ? '' : 'ss-bar-inactive'}" style="height:${p.active ? Math.round((p.ca / max) * 100) : 4}%;"></div>
+            (p, i) => `
+          <div class="co-bar-wrap" data-ss-activity-index="${i}" role="button" tabindex="0" title="${p.label} : ${p.active ? fmt(p.ca) : 'aucune vente'}">
+            <div class="co-bar ${p.active ? '' : 'ss-bar-inactive'}${i === this.focusedActivityIndex ? ' co-bar-selected' : ''}" style="height:${p.active ? Math.round((p.ca / max) * 100) : 4}%;"></div>
           </div>
         `
           )

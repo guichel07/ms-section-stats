@@ -129,6 +129,70 @@ describe('Stats', () => {
     expect(root.querySelector('.ctotal')?.textContent).toBe('360 F');
   });
 
+  it('shows the aggregate hourly affluence by default, then drills into a bucket on click', () => {
+    const periodsWithHourly: StatsPeriod[] = [
+      {
+        key: 'day',
+        label: 'Jour',
+        metrics: { v1: { ca: 100, benefice: 30 }, v2: { ca: 300, benefice: 60 } },
+        firstSaleTime: '08:00',
+        lastSaleTime: '20:00',
+        hourlyPattern: [{ hour: 14, salesCount: 5, ca: 400 }],
+        trend: [
+          {
+            key: 'j1',
+            label: 'J1',
+            ca: 60,
+            benefice: 15,
+            firstSaleTime: '09:00',
+            lastSaleTime: '09:00',
+            hourlyPattern: [{ hour: 9, salesCount: 1, ca: 60 }],
+          },
+          {
+            key: 'j2',
+            label: 'J2',
+            ca: 340,
+            benefice: 75,
+            firstSaleTime: '11:00',
+            lastSaleTime: '18:00',
+            hourlyPattern: [
+              { hour: 11, salesCount: 2, ca: 140 },
+              { hour: 18, salesCount: 2, ca: 200 },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const stats = new Stats(root);
+    stats.render({ sellers, periods: periodsWithHourly, defaultPeriodKey: 'day' });
+
+    expect(root.querySelector('#global-hourly-title')?.textContent).toBe('Affluence — heure par heure');
+    expect(root.querySelector('#global-hourly-chart')?.textContent).toContain('14h');
+    // Vue agrégée : le shift-card montre déjà le premier/dernier vente du dernier jour actif.
+    expect(root.querySelector('#global-shift-card')?.textContent).toContain('08:00');
+    expect(root.querySelector('#global-shift-card')?.textContent).toContain('20:00');
+
+    root.querySelector<HTMLElement>('.mss-trend-bar-wrap[data-idx="1"]')!.click();
+
+    expect(root.querySelector('#global-hourly-title')?.textContent).toBe('Affluence — heure par heure — J2');
+    expect(root.querySelectorAll('#global-hourly-chart .co-bar-wrap').length).toBe(2);
+    expect(root.querySelector('#global-shift-card')?.textContent).toContain('11:00');
+    expect(root.querySelector('#global-shift-card')?.textContent).toContain('18:00');
+
+    // Reclique la même barre -> retour à l'agrégat.
+    root.querySelector<HTMLElement>('.mss-trend-bar-wrap[data-idx="1"]')!.click();
+    expect(root.querySelector('#global-hourly-title')?.textContent).toBe('Affluence — heure par heure');
+  });
+
+  it('hides the global shift-card when the period carries no first/last sale time', () => {
+    const stats = new Stats(root);
+    stats.render({ sellers, periods });
+
+    expect((root.querySelector('#global-shift-wrap') as HTMLElement).style.display).toBe('none');
+    expect(root.querySelector('#global-hourly-chart')?.textContent).toContain('Pas assez de données');
+  });
+
   it('falls back to "—" when there are no sellers', () => {
     const stats = new Stats(root);
     stats.render({ sellers: [], periods });
@@ -167,8 +231,26 @@ describe('Stats', () => {
           activeBucketsCount: 4,
           totalBucketsCount: 7,
           activity: [
-            { label: 'Lun', ca: 5000, benefice: 1500, salesCount: 1, active: true },
-            { label: 'Mar', ca: 0, benefice: 0, salesCount: 0, active: false },
+            {
+              label: 'Lun',
+              ca: 5000,
+              benefice: 1500,
+              salesCount: 1,
+              active: true,
+              firstSaleTime: '09:00',
+              lastSaleTime: '09:00',
+              hourlyPattern: [{ hour: 9, salesCount: 1, ca: 5000 }],
+            },
+            {
+              label: 'Mar',
+              ca: 0,
+              benefice: 0,
+              salesCount: 0,
+              active: false,
+              firstSaleTime: null,
+              lastSaleTime: null,
+              hourlyPattern: [],
+            },
           ],
           hourlyPattern: [{ hour: 14, salesCount: 6, ca: 30000 }],
           topItems: [{ name: 'Crème hydratante', quantity: 4, ca: 20000 }],
@@ -177,6 +259,61 @@ describe('Stats', () => {
       ...overrides,
     };
   }
+
+  it('drills into a bucket\'s own hours when its activity bar is clicked', () => {
+    const stats = new Stats(root);
+    stats.render({ sellers, periods });
+    stats.showSellerDetail(sampleDetail());
+
+    // Vue agrégée par défaut : le hourlyPattern de la période (14h).
+    expect(root.querySelector('#ss-hourly-title')?.textContent).toBe('Affluence — heure par heure');
+    expect(root.querySelector('#ss-hourly-chart')?.textContent).toContain('14h');
+
+    root.querySelector<HTMLElement>('#ss-activity-chart [data-ss-activity-index="0"]')!.click();
+
+    // Focus sur "Lun" : bascule sur les heures propres à ce bucket (9h) et son shift-card.
+    expect(root.querySelector('#ss-hourly-title')?.textContent).toBe('Affluence — heure par heure — Lun');
+    expect(root.querySelector('#ss-hourly-chart')?.textContent).toContain('9h');
+    expect(root.querySelector('#seller-sidebar .ss-shift-card')?.textContent).toContain('09:00');
+
+    // Recliquer la même barre revient à l'agrégat.
+    root.querySelector<HTMLElement>('#ss-activity-chart [data-ss-activity-index="0"]')!.click();
+    expect(root.querySelector('#ss-hourly-title')?.textContent).toBe('Affluence — heure par heure');
+  });
+
+  it('resets the activity drill-down when switching seller period', () => {
+    const stats = new Stats(root);
+    stats.render({ sellers, periods });
+    stats.showSellerDetail(
+      sampleDetail({
+        periods: [
+          ...sampleDetail().periods,
+          {
+            key: '4sem',
+            label: '4 semaines',
+            totalCa: 90000,
+            totalBenefice: 27000,
+            averageBasket: 5000,
+            transactionsCount: 18,
+            itemsSoldCount: 30,
+            activeBucketsCount: 4,
+            totalBucketsCount: 4,
+            activity: [],
+            hourlyPattern: [{ hour: 10, salesCount: 3, ca: 20000 }],
+            topItems: [],
+          },
+        ],
+      })
+    );
+
+    root.querySelector<HTMLElement>('#ss-activity-chart [data-ss-activity-index="0"]')!.click();
+    expect(root.querySelector('#ss-hourly-title')?.textContent).toContain('Lun');
+
+    root.querySelector<HTMLElement>('[data-ss-period="4sem"]')!.click();
+
+    expect(root.querySelector('#ss-hourly-title')?.textContent).toBe('Affluence — heure par heure');
+    expect(root.querySelector('#ss-hourly-chart')?.textContent).toContain('10h');
+  });
 
   it('opens the seller side panel with rank, KPIs and top items', () => {
     const stats = new Stats(root);
