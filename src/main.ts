@@ -1,6 +1,6 @@
 import 'tek-ms-ds/dist/style.css';
 import { Stats } from './stats';
-import type { StatsPeriod, TrendBucket } from './stats';
+import type { SellerDetail, StatsPeriod, TrendBucket } from './stats';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
@@ -92,6 +92,131 @@ const periods: StatsPeriod[] = [
   },
 ];
 
+const sellerDetails: Record<string, SellerDetail> = {
+  v1: {
+    email: 'v1',
+    alert: { level: 'critical', message: 'Aucune vente depuis 3 jours' },
+    firstSaleTime: '09:10',
+    lastSaleTime: '17:45',
+    lastActiveDayLabel: '24/07',
+    defaultPeriodKey: '7j',
+    periods: [
+      {
+        key: '7j',
+        label: '7 jours',
+        totalCa: 45000,
+        totalBenefice: 13500,
+        averageBasket: 4500,
+        transactionsCount: 10,
+        itemsSoldCount: 16,
+        activeBucketsCount: 3,
+        totalBucketsCount: 7,
+        activity: [
+          { label: 'Lun', ca: 12000, benefice: 3600, salesCount: 3, active: true },
+          { label: 'Mar', ca: 18000, benefice: 5400, salesCount: 4, active: true },
+          { label: 'Mer', ca: 15000, benefice: 4500, salesCount: 3, active: true },
+          { label: 'Jeu', ca: 0, benefice: 0, salesCount: 0, active: false },
+          { label: 'Ven', ca: 0, benefice: 0, salesCount: 0, active: false },
+          { label: 'Sam', ca: 0, benefice: 0, salesCount: 0, active: false },
+          { label: 'Dim', ca: 0, benefice: 0, salesCount: 0, active: false },
+        ],
+        hourlyPattern: [
+          { hour: 9, salesCount: 2, ca: 9000 },
+          { hour: 12, salesCount: 4, ca: 18000 },
+          { hour: 17, salesCount: 4, ca: 18000 },
+        ],
+        topItems: [
+          { name: 'Sac de riz 25kg', quantity: 6, ca: 24000 },
+          { name: "Bidon d'huile 5L", quantity: 10, ca: 21000 },
+        ],
+      },
+    ],
+  },
+  v2: {
+    email: 'v2',
+    alert: null,
+    firstSaleTime: '08:05',
+    lastSaleTime: '19:20',
+    lastActiveDayLabel: "Aujourd'hui",
+    defaultPeriodKey: '7j',
+    periods: [
+      {
+        key: '7j',
+        label: '7 jours',
+        totalCa: 62000,
+        totalBenefice: 18600,
+        averageBasket: 5166,
+        transactionsCount: 12,
+        itemsSoldCount: 22,
+        activeBucketsCount: 6,
+        totalBucketsCount: 7,
+        activity: [
+          { label: 'Lun', ca: 8000, benefice: 2400, salesCount: 2, active: true },
+          { label: 'Mar', ca: 9500, benefice: 2850, salesCount: 2, active: true },
+          { label: 'Mer', ca: 11000, benefice: 3300, salesCount: 2, active: true },
+          { label: 'Jeu', ca: 10500, benefice: 3150, salesCount: 2, active: true },
+          { label: 'Ven', ca: 0, benefice: 0, salesCount: 0, active: false },
+          { label: 'Sam', ca: 12000, benefice: 3600, salesCount: 2, active: true },
+          { label: 'Dim', ca: 11000, benefice: 3300, salesCount: 2, active: true },
+        ],
+        hourlyPattern: [
+          { hour: 8, salesCount: 2, ca: 10300 },
+          { hour: 13, salesCount: 6, ca: 30900 },
+          { hour: 19, salesCount: 4, ca: 20600 },
+        ],
+        topItems: [
+          { name: "Bidon d'huile 5L", quantity: 12, ca: 25200 },
+          { name: 'Sac de riz 25kg', quantity: 8, ca: 32000 },
+        ],
+      },
+    ],
+  },
+  v3: {
+    email: 'v3',
+    alert: { level: 'warning', message: 'Cadence en baisse de 24% vs la semaine dernière' },
+    firstSaleTime: '10:00',
+    lastSaleTime: '16:30',
+    lastActiveDayLabel: "Aujourd'hui",
+    defaultPeriodKey: '7j',
+    periods: [
+      {
+        key: '7j',
+        label: '7 jours',
+        totalCa: 30000,
+        totalBenefice: 9000,
+        averageBasket: 5000,
+        transactionsCount: 6,
+        itemsSoldCount: 9,
+        activeBucketsCount: 4,
+        totalBucketsCount: 7,
+        activity: [
+          { label: 'Lun', ca: 7500, benefice: 2250, salesCount: 2, active: true },
+          { label: 'Mar', ca: 0, benefice: 0, salesCount: 0, active: false },
+          { label: 'Mer', ca: 6000, benefice: 1800, salesCount: 1, active: true },
+          { label: 'Jeu', ca: 0, benefice: 0, salesCount: 0, active: false },
+          { label: 'Ven', ca: 8500, benefice: 2550, salesCount: 2, active: true },
+          { label: 'Sam', ca: 0, benefice: 0, salesCount: 0, active: false },
+          { label: 'Dim', ca: 8000, benefice: 2400, salesCount: 1, active: true },
+        ],
+        hourlyPattern: [
+          { hour: 10, salesCount: 3, ca: 15000 },
+          { hour: 16, salesCount: 3, ca: 15000 },
+        ],
+        topItems: [{ name: 'Vitamines C 1000', quantity: 9, ca: 30000 }],
+      },
+    ],
+  },
+};
+
 const stats = new Stats(app);
 
-stats.render({ sellers, periods, defaultPeriodKey: '7j', defaultMetric: 'ca' });
+stats.render({
+  sellers,
+  periods,
+  defaultPeriodKey: '7j',
+  defaultMetric: 'ca',
+  onSellerSelect: (sellerId) => {
+    const detail = sellerDetails[sellerId];
+    if (detail) stats.showSellerDetail(detail);
+  },
+});

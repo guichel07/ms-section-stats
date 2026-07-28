@@ -7,4 +7,11 @@ export type {
   Metrics,
   TrendBucket,
   PeriodDelta,
+  SellerDetail,
+  SellerPeriodData,
+  SellerAlert,
+  SellerAlertLevel,
+  SellerActivityPoint,
+  SellerHourlyPoint,
+  SellerTopItem,
 } from './stats';

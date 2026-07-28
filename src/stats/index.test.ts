@@ -1,6 +1,6 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { Stats } from './index';
-import type { StatsPeriod } from './index';
+import type { SellerDetail, StatsPeriod } from './index';
 
 const sellers = [
   { id: 'v1', name: 'Awa Diop', zone: 'Dakar', phone: '77 000 00 00' },
@@ -135,5 +135,117 @@ describe('Stats', () => {
 
     expect(root.querySelector('#stat-top')?.textContent).toBe('—');
     expect(root.querySelectorAll('.client-card').length).toBe(0);
+  });
+
+  it('fires onSellerSelect with the seller id when a card is clicked', () => {
+    const onSellerSelect = vi.fn();
+    const stats = new Stats(root);
+    stats.render({ sellers, periods, onSellerSelect });
+
+    root.querySelector<HTMLElement>('.client-card[data-seller-id="v1"]')!.click();
+
+    expect(onSellerSelect).toHaveBeenCalledWith('v1');
+  });
+
+  function sampleDetail(overrides: Partial<SellerDetail> = {}): SellerDetail {
+    return {
+      email: 'v2',
+      alert: null,
+      firstSaleTime: '08:32',
+      lastSaleTime: '19:47',
+      lastActiveDayLabel: "Aujourd'hui",
+      defaultPeriodKey: '7j',
+      periods: [
+        {
+          key: '7j',
+          label: '7 jours',
+          totalCa: 30000,
+          totalBenefice: 9000,
+          averageBasket: 5000,
+          transactionsCount: 6,
+          itemsSoldCount: 10,
+          activeBucketsCount: 4,
+          totalBucketsCount: 7,
+          activity: [
+            { label: 'Lun', ca: 5000, benefice: 1500, salesCount: 1, active: true },
+            { label: 'Mar', ca: 0, benefice: 0, salesCount: 0, active: false },
+          ],
+          hourlyPattern: [{ hour: 14, salesCount: 6, ca: 30000 }],
+          topItems: [{ name: 'Crème hydratante', quantity: 4, ca: 20000 }],
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  it('opens the seller side panel with rank, KPIs and top items', () => {
+    const stats = new Stats(root);
+    stats.render({ sellers, periods });
+
+    stats.showSellerDetail(sampleDetail());
+
+    const sidebar = root.querySelector('#seller-sidebar')!;
+    expect(sidebar.querySelector('.cs-name')?.textContent).toBe('Moussa Ba');
+    expect(sidebar.querySelector('.mss-rank')?.textContent).toBe('#1');
+    expect(sidebar.querySelector('.cs-kpi-val')?.textContent).toBe('30 000 F');
+    expect(sidebar.textContent).toContain('Crème hydratante');
+    expect(root.querySelector('.client-card[data-seller-id="v2"]')?.classList.contains('active')).toBe(true);
+  });
+
+  it('shows the alert banner when the seller detail carries one', () => {
+    const stats = new Stats(root);
+    stats.render({ sellers, periods });
+
+    stats.showSellerDetail(
+      sampleDetail({ alert: { level: 'critical', message: 'Aucune vente depuis 3 jours' } })
+    );
+
+    const alert = root.querySelector('#seller-sidebar .cs-alert');
+    expect(alert?.textContent).toContain('Aucune vente depuis 3 jours');
+    expect(alert?.classList.contains('cs-alert-warning')).toBe(false);
+  });
+
+  it('switches the displayed period when a seller period chip is clicked', () => {
+    const stats = new Stats(root);
+    stats.render({ sellers, periods });
+
+    stats.showSellerDetail(
+      sampleDetail({
+        defaultPeriodKey: '7j',
+        periods: [
+          ...sampleDetail().periods,
+          {
+            key: '4sem',
+            label: '4 semaines',
+            totalCa: 90000,
+            totalBenefice: 27000,
+            averageBasket: 5000,
+            transactionsCount: 18,
+            itemsSoldCount: 30,
+            activeBucketsCount: 4,
+            totalBucketsCount: 4,
+            activity: [],
+            hourlyPattern: [],
+            topItems: [],
+          },
+        ],
+      })
+    );
+
+    root.querySelector<HTMLElement>('[data-ss-period="4sem"]')!.click();
+
+    const sidebar = root.querySelector('#seller-sidebar')!;
+    expect(sidebar.querySelector('.cs-kpi-val')?.textContent).toBe('90 000 F');
+  });
+
+  it('closes the seller side panel and clears the active card', () => {
+    const stats = new Stats(root);
+    stats.render({ sellers, periods });
+    stats.showSellerDetail(sampleDetail());
+
+    root.querySelector<HTMLElement>('#ss-close-btn')!.click();
+
+    expect(root.querySelector('#seller-sidebar')?.innerHTML).toBe('');
+    expect(root.querySelector('.client-card.active')).toBeNull();
   });
 });
