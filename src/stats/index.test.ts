@@ -385,4 +385,96 @@ describe('Stats', () => {
     expect(root.querySelector('#seller-sidebar')?.innerHTML).toBe('');
     expect(root.querySelector('.client-card.active')).toBeNull();
   });
+
+  describe('AI chat assistant', () => {
+    it('toggles the panel open and closed', () => {
+      const stats = new Stats(root);
+      stats.render({ sellers, periods });
+
+      expect(root.querySelector('.stats-chat-wrap')).toBeNull();
+      root.querySelector<HTMLElement>('#stats-chat-toggle')!.click();
+      expect(root.querySelector('.stats-chat-wrap')).not.toBeNull();
+
+      root.querySelector<HTMLElement>('#stats-chat-close')!.click();
+      expect(root.querySelector('.stats-chat-wrap')).toBeNull();
+    });
+
+    it('sends a question to the AI callback with the full history and live sellers/periods context', async () => {
+      const askStatsAi = vi.fn().mockResolvedValue('Moussa Ba est en tête aujourd\'hui.');
+      const stats = new Stats(root);
+      stats.render({ sellers, periods, askStatsAi });
+
+      root.querySelector<HTMLElement>('#stats-chat-toggle')!.click();
+      root.querySelector<HTMLTextAreaElement>('#stats-chat-input')!.value = 'qui est en tête ?';
+      root.querySelector<HTMLElement>('#stats-chat-send')!.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(askStatsAi).toHaveBeenCalledWith(
+        [{ role: 'user', content: 'qui est en tête ?' }],
+        expect.objectContaining({ sellers: expect.any(Array), periods: expect.any(Array) })
+      );
+      const panel = root.querySelector('#stats-chat-messages')!;
+      expect(panel.textContent).toContain('qui est en tête ?');
+      expect(panel.textContent).toContain('Moussa Ba est en tête aujourd\'hui.');
+    });
+
+    it('shows an error with a retry button when the AI call fails', async () => {
+      const askStatsAi = vi.fn().mockRejectedValueOnce(new Error('down')).mockResolvedValueOnce('Ça marche.');
+      const stats = new Stats(root);
+      stats.render({ sellers, periods, askStatsAi });
+
+      root.querySelector<HTMLElement>('#stats-chat-toggle')!.click();
+      root.querySelector<HTMLTextAreaElement>('#stats-chat-input')!.value = 'test';
+      root.querySelector<HTMLElement>('#stats-chat-send')!.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(root.querySelector('.stats-chat-error')).not.toBeNull();
+
+      root.querySelector<HTMLElement>('#stats-chat-retry')!.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(askStatsAi).toHaveBeenCalledTimes(2);
+      expect(root.querySelector('.stats-chat-error')).toBeNull();
+      expect(root.querySelector('#stats-chat-messages')?.textContent).toContain('Ça marche.');
+    });
+
+    it('renders markdown bold from the AI answer and escapes any raw HTML', async () => {
+      const askStatsAi = vi.fn().mockResolvedValue('**Moussa Ba** <script>alert(1)</script> est en tête.');
+      const stats = new Stats(root);
+      stats.render({ sellers, periods, askStatsAi });
+
+      root.querySelector<HTMLElement>('#stats-chat-toggle')!.click();
+      root.querySelector<HTMLTextAreaElement>('#stats-chat-input')!.value = 'qui est en tête ?';
+      root.querySelector<HTMLElement>('#stats-chat-send')!.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      const assistantMsg = root.querySelector('.stats-chat-msg-assistant')!;
+      expect(assistantMsg.querySelector('strong')?.textContent).toBe('Moussa Ba');
+      expect(assistantMsg.querySelector('script')).toBeNull();
+      expect(assistantMsg.textContent).toContain('<script>alert(1)</script>');
+    });
+
+    it('resets the conversation without closing the panel', async () => {
+      const askStatsAi = vi.fn().mockResolvedValue('Moussa Ba est en tête.');
+      const stats = new Stats(root);
+      stats.render({ sellers, periods, askStatsAi });
+
+      root.querySelector<HTMLElement>('#stats-chat-toggle')!.click();
+      root.querySelector<HTMLTextAreaElement>('#stats-chat-input')!.value = 'test';
+      root.querySelector<HTMLElement>('#stats-chat-send')!.click();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(root.querySelector('#stats-chat-messages')?.textContent).toContain('Moussa Ba est en tête.');
+
+      root.querySelector<HTMLElement>('#stats-chat-reset')!.click();
+
+      expect(root.querySelector('.stats-chat-wrap')).not.toBeNull();
+      expect(root.querySelectorAll('.stats-chat-msg')).toHaveLength(0);
+    });
+  });
 });

@@ -15,3 +15,12 @@ export type {
   SellerHourlyPoint,
   SellerTopItem,
 } from './stats';
+
+export { StatsChatClient, StatsChatError, localStatsSearch } from './ai';
+export type {
+  ChatAiProvider,
+  ChatAiCredentials,
+  StatsChatMessage,
+  StatsChatContext,
+  StatsChatErrorCode,
+} from './ai';

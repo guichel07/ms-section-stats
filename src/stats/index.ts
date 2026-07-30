@@ -5,6 +5,49 @@ import {
   RANK_TIERS,
   DENSE_TREND_THRESHOLD,
 } from '../constants';
+import type { StatsChatContext, StatsChatMessage } from '../ai';
+
+/** Échappe le texte libre (saisie utilisateur, réponse IA) avant injection dans innerHTML — évite toute casse XSS. */
+function escapeHtmlChat(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/** Rend le markdown minimal (gras **texte**) des réponses IA — échappe d'abord tout le texte, donc sans risque XSS. */
+function renderChatMarkdown(text: string): string {
+  return escapeHtmlChat(text).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+const CHAT_STYLES_ID = 'stats-chat-styles';
+
+/** Styles du panneau IA, injectés une seule fois dans document.head (this.el est vidé à chaque render()). */
+function injectChatStyles(): void {
+  if (document.getElementById(CHAT_STYLES_ID)) return;
+  const style = document.createElement('style');
+  style.id = CHAT_STYLES_ID;
+  style.textContent = `
+    .stats-chat-toggle { flex-shrink: 0; white-space: nowrap; }
+    /* Le panneau IA réutilise .client-sidebar (même fiche que le détail vendeur) : largeur 400px,
+       fond papier, coins arrondis et transition de largeur viennent du design system, pas d'ici. */
+    .stats-chat-wrap { display: flex; flex-direction: column; max-height: calc(100vh - 64px); }
+    .stats-chat-messages { flex: 1 1 auto; min-height: 60px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+    .stats-chat-msg { padding: 8px 11px; border-radius: 11px; font-size: 12.5px; line-height: 1.45; white-space: pre-wrap; max-width: 92%; }
+    .stats-chat-msg-user { align-self: flex-end; background: var(--clay-bright); color: #fff; }
+    .stats-chat-msg-assistant { align-self: flex-start; background: var(--paper-deep); color: var(--ink); }
+    .stats-chat-loading { display: flex; gap: 4px; align-items: center; padding: 10px 14px; }
+    .stats-chat-loading span { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-muted); animation: statsChatBounce 1s infinite ease-in-out; }
+    .stats-chat-loading span:nth-child(2) { animation-delay: .15s; }
+    .stats-chat-loading span:nth-child(3) { animation-delay: .3s; }
+    @keyframes statsChatBounce { 0%, 80%, to { opacity: .3; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
+    .stats-chat-error { margin: 0 0 8px; padding: 8px 10px; border-radius: 9px; background: #b23a3324; color: var(--rust); font-size: 11.5px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .stats-chat-retry-btn { border: none; background: var(--rust); color: #fff; border-radius: 7px; padding: 4px 9px; font-size: 11px; cursor: pointer; flex-shrink: 0; }
+    .stats-chat-input-row { display: flex; gap: 8px; padding-top: 10px; border-top: 1px solid var(--paper-line); flex-shrink: 0; }
+    .stats-chat-input-row textarea { flex: 1; resize: none; border: 1.5px solid var(--paper-line); border-radius: 9px; padding: 7px 9px; font-family: inherit; font-size: 12px; color: var(--ink); }
+    .stats-chat-input-row button { flex-shrink: 0; }
+  `;
+  document.head.appendChild(style);
+}
 
 export interface Metrics {
   ca: number;
@@ -134,6 +177,8 @@ export interface StatsOptions {
   defaultPeriodKey?: string;
   defaultMetric?: StatsMetricKey;
   onSellerSelect?: (sellerId: string) => void;
+  /** IA conversationnelle ou repli local par mot-clé — reçoit l'historique complet (dernier message = la question en cours). */
+  askStatsAi?: (history: StatsChatMessage[], context: StatsChatContext) => Promise<string>;
 }
 
 const METRIC_LABEL: Record<StatsMetricKey, string> = {
@@ -158,17 +203,25 @@ export class Stats {
   /** Index du bucket d'activité sélectionné (drill-down horaire) — null = vue agrégée sur toute la période. */
   private focusedActivityIndex: number | null = null;
 
+  private askStatsAi?: (history: StatsChatMessage[], context: StatsChatContext) => Promise<string>;
+  private chatPanelOpen = false;
+  private chatMessages: StatsChatMessage[] = [];
+  private chatLoading = false;
+  private chatError: string | null = null;
+
   constructor(el: HTMLElement) {
     this.el = el;
   }
 
   render(options: StatsOptions): void {
+    injectChatStyles();
     this.sellers = options.sellers;
     this.periods = options.periods;
     this.currentPeriodKey = options.defaultPeriodKey ?? this.periods[0]?.key ?? '';
     this.currentMetric = options.defaultMetric ?? 'ca';
     this.focusedBucketIndex = null;
     this.onSellerSelect = options.onSellerSelect;
+    this.askStatsAi = options.askStatsAi;
     this.currentSellerDetail = null;
 
     this.el.innerHTML = `
@@ -205,6 +258,7 @@ export class Stats {
             <button type="button" class="mss-metric-btn" data-metric="ca">CA</button>
             <button type="button" class="mss-metric-btn" data-metric="benefice">Bénéfice</button>
           </div>
+          <button class="btn-cancel stats-chat-toggle" id="stats-chat-toggle" type="button">🤖 Assistant IA</button>
         </div>
 
         <div class="cs-trend-card" id="global-shift-wrap" style="display:none;">
@@ -235,12 +289,116 @@ export class Stats {
         <div class="clients-body">
           <div class="clients-grid" id="sellers-grid"></div>
           <aside class="client-sidebar" id="seller-sidebar"></aside>
+          <aside class="client-sidebar" id="stats-chat-panel-mount"></aside>
         </div>
       </div>
     `;
 
     this.update();
+    this.renderChatPanel();
     this.bindEvents();
+  }
+
+  private renderChatPanel(): void {
+    const mount = this.el.querySelector<HTMLElement>('#stats-chat-panel-mount');
+    if (!mount) return;
+
+    if (!this.chatPanelOpen) {
+      mount.innerHTML = '';
+      return;
+    }
+
+    const messagesHtml =
+      this.chatMessages.length === 0
+        ? '<div class="no-results"><span class="mark">Pose une question, ex : "quel vendeur a le plus vendu ?"</span></div>'
+        : this.chatMessages
+            .map((m) => `<div class="stats-chat-msg stats-chat-msg-${m.role}">${renderChatMarkdown(m.content)}</div>`)
+            .join('');
+
+    mount.innerHTML = `
+      <div class="stats-chat-wrap">
+        <div class="cs-head">
+          <div class="avatar">🤖</div>
+          <div class="cs-head-info"><h3 class="cs-name">Assistant Statistiques</h3></div>
+          <button type="button" class="cs-close-btn" id="stats-chat-reset" aria-label="Effacer la conversation" title="Effacer la conversation">🗑</button>
+          <button type="button" class="cs-close-btn" id="stats-chat-close" aria-label="Fermer">✕</button>
+        </div>
+        <div class="stats-chat-messages" id="stats-chat-messages">
+          ${messagesHtml}
+          ${this.chatLoading ? '<div class="stats-chat-msg stats-chat-msg-assistant stats-chat-loading"><span></span><span></span><span></span></div>' : ''}
+        </div>
+        ${
+          this.chatError
+            ? `<div class="stats-chat-error">${escapeHtmlChat(this.chatError)}<button type="button" id="stats-chat-retry" class="stats-chat-retry-btn">Réessayer</button></div>`
+            : ''
+        }
+        <div class="stats-chat-input-row">
+          <textarea id="stats-chat-input" rows="2" placeholder="Ex : quel vendeur a le plus vendu ?" ${this.chatLoading ? 'disabled' : ''}></textarea>
+          <button type="button" id="stats-chat-send" class="btn-confirm" ${this.chatLoading ? 'disabled' : ''}>Envoyer</button>
+        </div>
+      </div>
+    `;
+
+    const list = mount.querySelector<HTMLElement>('#stats-chat-messages');
+    if (list) list.scrollTop = list.scrollHeight;
+  }
+
+  private toggleChatPanel(): void {
+    this.chatPanelOpen = !this.chatPanelOpen;
+    this.renderChatPanel();
+  }
+
+  private closeChatPanel(): void {
+    this.chatPanelOpen = false;
+    this.renderChatPanel();
+  }
+
+  private resetChatConversation(): void {
+    this.chatMessages = [];
+    this.chatError = null;
+    this.renderChatPanel();
+  }
+
+  private async sendChatMessage(text: string): Promise<void> {
+    const trimmed = text.trim();
+    if (!trimmed || this.chatLoading) return;
+
+    if (!this.askStatsAi) {
+      this.chatError = 'Assistant IA non disponible.';
+      this.renderChatPanel();
+      return;
+    }
+
+    this.chatMessages.push({ role: 'user', content: trimmed });
+    const input = this.el.querySelector<HTMLTextAreaElement>('#stats-chat-input');
+    if (input) input.value = '';
+    await this.runChatRequest();
+  }
+
+  private async retryChatMessage(): Promise<void> {
+    if (this.chatLoading) return;
+    await this.runChatRequest();
+  }
+
+  private async runChatRequest(): Promise<void> {
+    if (!this.askStatsAi) return;
+
+    this.chatError = null;
+    this.chatLoading = true;
+    this.renderChatPanel();
+
+    try {
+      const answer = await this.askStatsAi([...this.chatMessages], {
+        sellers: this.sellers,
+        periods: this.periods,
+      });
+      this.chatMessages.push({ role: 'assistant', content: answer });
+    } catch {
+      this.chatError = "La réponse de l'assistant a échoué — réessaie.";
+    } finally {
+      this.chatLoading = false;
+      this.renderChatPanel();
+    }
   }
 
   private getPeriod(): StatsPeriod | undefined {
@@ -601,6 +759,32 @@ export class Stats {
     this.el.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
 
+      if (target.closest('#stats-chat-toggle')) {
+        this.toggleChatPanel();
+        return;
+      }
+
+      if (target.closest('#stats-chat-close')) {
+        this.closeChatPanel();
+        return;
+      }
+
+      if (target.closest('#stats-chat-reset')) {
+        this.resetChatConversation();
+        return;
+      }
+
+      if (target.closest('#stats-chat-send')) {
+        const input = this.el.querySelector<HTMLTextAreaElement>('#stats-chat-input');
+        void this.sendChatMessage(input?.value ?? '');
+        return;
+      }
+
+      if (target.closest('#stats-chat-retry')) {
+        void this.retryChatMessage();
+        return;
+      }
+
       const chip = target.closest<HTMLElement>('.chip[data-period]');
       if (chip) {
         const key = chip.dataset.period;
@@ -667,6 +851,14 @@ export class Stats {
         const index = Number(activityBar.dataset.ssActivityIndex);
         this.focusedActivityIndex = this.focusedActivityIndex === index ? null : index;
         this.renderSellerSidebar();
+      }
+    });
+
+    this.el.addEventListener('keydown', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.id === 'stats-chat-input' && e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        void this.sendChatMessage((target as HTMLTextAreaElement).value);
       }
     });
   }
