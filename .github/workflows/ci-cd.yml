@@ -109,6 +109,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Verifier que le tag pointe bien sur un commit de main
+        run: |
+          git fetch origin main --quiet
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
+            echo "::error::Le tag ${{ github.ref_name }} ne pointe pas sur un commit de main - publication annulee."
+            exit 1
+          fi
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
